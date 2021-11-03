@@ -8,11 +8,13 @@ void freeGenes();
 
 void createOrders();
 
-void inferProbabilities();
+bool inferProbabilities();
 
 bool areGenesInitialized();
 
-void insertProbability(double probability, int row, int col);
+void insertProbability(float probability, int row, int col);
+
+float getProbability(int row, int col);
 
 int getTotalGenes();
 
@@ -20,6 +22,16 @@ Array_char getGeneName(int i);
 
 int getTotalPossibleOrders();
 
+bool areOrdersCreated();
+
 Array_ints getOrders();
 
-Array_double getRelativeDistances(Array_int order);
+Array_float getDistances(int i);
+
+bool isValidProbability(float prob);
+
+void bye0sRight(char num[9]);
+
+bool loadFile(char fileName[]);
+
+bool saveFile(char fileName[]);

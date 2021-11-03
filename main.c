@@ -27,9 +27,11 @@ int desActualPageX = 1, desActualPageY = 1;
 int desTotPageX = 1, desTotPageY = 1;
 int maxRows = 5, maxCols = 5;
 int totalProbs = 0;
+bool needFillGrid = true;
 
 GtkWidget *btn_nFeatures;
 GtkWidget *txt_nFeatures;
+GtkWidget *txt_fileName;
 
 GtkWidget *btn_loadFile;
 GtkWidget *btn_saveFile;
@@ -37,18 +39,21 @@ GtkWidget *btn_chooseFile;
 bool fileChosen = false;
 
 GtkWidget *da_chromosomes;
-double scale = 1.0;
+float scale = 1.0;
 
-bool needsDrawing = false;
+bool autoFilledTxtGrid = false, autoFilledTxtFeatures = false;
 
 void do_drawing(cairo_t *cr);
 void createProbabilitiesGrid();
 void fillProbabilitiesGrid(int total);
 void fillProbabilitiesGridAux();
 void initRCPairs();
+void changeCommaToPoint(char str[9]);
+void setEntriesRestrictions();
 
 void on_txt_probability_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, gint* position, gpointer user_data);
-
+void on_txt_gene_name_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, gint* position, gpointer user_data);
+void on_txt_probability_delete_text(GtkEditable* self,gint start_pos,gint end_pos, gpointer user_data);
 
 int main(int argc, char *argv[]){
   initRCPairs();
@@ -61,20 +66,26 @@ int main(int argc, char *argv[]){
   grid_probabilities = GTK_WIDGET(gtk_builder_get_object(builder, "grid_probabilities"));
   da_chromosomes = GTK_WIDGET(gtk_builder_get_object(builder, "da_chromosomes"));
   txt_nFeatures = GTK_WIDGET(gtk_builder_get_object(builder, "txt_nFeatures"));
+  txt_fileName = GTK_WIDGET(gtk_builder_get_object(builder, "txt_fileName"));
   lbl_probabilitiesPages = GTK_WIDGET(gtk_builder_get_object(builder, "lbl_probabilitiesPages"));
 
   gtk_window_maximize(GTK_WINDOW(window));
   gtk_builder_connect_signals(builder, NULL);
   createProbabilitiesGrid();
 
+  setEntriesRestrictions();
   
   gtk_widget_show(window);
   gtk_main();
   return 0;
 }
 
+void setEntriesRestrictions(){
+  gtk_entry_set_max_length (GTK_ENTRY(txt_nFeatures), 1);
+}
+
 void initRCPairs(){
-  initArray(rcArray, struct RCPair*, 16);
+  initArray(rcArray, struct RCPair*, maxRows*maxCols);
   for(int i = 0; i < rcArray.size; i++){
     rcArray.data[i] = NULL;
   }
@@ -87,36 +98,38 @@ gboolean on_da_chromosomes_draw(GtkWidget *widget, cairo_t *cr, gpointer user_da
 }
 
 void do_drawing(cairo_t *cr){
-  double xCoordChromosome, yCoordGene;
-  if(needsDrawing){
-    needsDrawing = false;
-    printf("SE LLAMA\n");
-    if(areGenesInitialized()){
-      Array_ints orders = getOrders();
-      for(int i = 0; i < getTotalPossibleOrders(); i++){
-        for(int k = 0; k < orders.data[i].used; k++){
-          printf("%d,", orders.data[i].data[k]);
-        }
-        printf("\n");
-        xCoordChromosome = 10+i*20;
-        Array_double distances = getRelativeDistances(orders.data[i]);
-        cairo_scale(cr, scale, scale);
-        cairo_set_line_width(cr, 5);
-        cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND); 
-        cairo_move_to(cr, xCoordChromosome, 10);
-        cairo_line_to(cr, xCoordChromosome, 110);
-        cairo_move_to(cr, xCoordChromosome-10, 20);
-        cairo_line_to(cr, xCoordChromosome+10, 20);
-        for(int j = 0; j < distances.used; j++){
-          printf("xcc:%lf, d:%lf,", xCoordChromosome, distances.data[j]);
-          yCoordGene = 20+100*distances.data[j];
-          cairo_move_to(cr, xCoordChromosome-10, yCoordGene);
-          cairo_line_to(cr, xCoordChromosome+10, yCoordGene);
-        }
-        printf("\n");
-        cairo_stroke(cr);
+  float xCoordChromosome, yCoordGene;
+  Array_char geneName;
+  if(areGenesInitialized() && areOrdersCreated()){
+    Array_ints orders = getOrders();
+    cairo_scale(cr, scale, scale);
+    cairo_set_line_width(cr, 5);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    printf("DISTANCES --------------------------------------------------\n");
+    for(int i = 0; i < getTotalPossibleOrders(); i++){
+      yCoordGene = 20;
+      xCoordChromosome = 25+i*80;
+      Array_float distances = getDistances(i);
+      cairo_move_to(cr, xCoordChromosome, 10);
+      cairo_line_to(cr, xCoordChromosome, 110);
+
+      cairo_move_to(cr, xCoordChromosome-10, yCoordGene);
+      cairo_line_to(cr, xCoordChromosome+10, yCoordGene);
+      cairo_move_to(cr, xCoordChromosome+15, yCoordGene);
+      geneName = getGeneName(orders.data[i].data[0]);
+      cairo_show_text(cr, geneName.data);
+      for(int j = 0; j < distances.used; j++){
+        printf("%f,", distances.data[j]);
+        yCoordGene = yCoordGene+100*distances.data[j];
+        cairo_move_to(cr, xCoordChromosome-10, yCoordGene);
+        cairo_line_to(cr, xCoordChromosome+10, yCoordGene);
+        cairo_move_to(cr, xCoordChromosome+15, yCoordGene);
+        geneName = getGeneName(orders.data[i].data[j+1]);
+        cairo_show_text(cr, geneName.data);
       }
+      printf("\n");
     }
+    cairo_stroke(cr);
   }
 }
 
@@ -134,12 +147,14 @@ void createProbabilitiesGrid(){
         cell = gtk_entry_new();
         gtk_grid_attach(GTK_GRID(grid_probabilities), cell, col, row, 1, 1);
         gtk_widget_show(cell);
+        struct RCPair *rcp = malloc(sizeof(struct RCPair));
+        rcp->row = row-1;
+        rcp->col = col-1;
+        appendArray(rcArray, struct RCPair*, rcp);
         if(row != 0 && col != 0){
-          struct RCPair *rcp = malloc(sizeof(struct RCPair));
-          rcp->row = row-1;
-          rcp->col = col-1;
-          appendArray(rcArray, struct RCPair*, rcp);
           g_signal_connect(cell, "insert-text", G_CALLBACK(on_txt_probability_insert_text), rcArray.data[rcArray.used-1]);
+        } else {
+          g_signal_connect(cell, "insert-text", G_CALLBACK(on_txt_gene_name_insert_text), rcArray.data[rcArray.used-1]);
         }
       }
     }
@@ -149,7 +164,8 @@ void createProbabilitiesGrid(){
 }
 
 void fillProbabilitiesGrid(int total){
-  if(totalProbs != total){
+  if(totalProbs != total || needFillGrid){
+    needFillGrid = false;
     grid_probabilitiesRows = totalProbs = total;
     lastRow = 0; lastCol = 0;
     desActualPageX = 1; desActualPageY = 1;
@@ -162,10 +178,13 @@ void fillProbabilitiesGridAux(){
   int lRow = lastRow;
   int lCol = lastCol;
   int probRow=0,probCol=0;
+  float prob = 0.0;
+  char fillWith[9];
   for(int row = 0; row <= maxRows; row++){
     lRow = row + lastRow;
     probRow = row+lastRow-1;
     for(int col = 0; col <= maxCols; col++){
+      printf("Actual row:%d, col:%d\n",row, col);
       GtkWidget* cell = gtk_grid_get_child_at(GTK_GRID(grid_probabilities), col, row);
       lCol = col + lastCol;
       probCol = col+lastCol-1;
@@ -173,28 +192,42 @@ void fillProbabilitiesGridAux(){
         if(lCol-1 < getTotalGenes()){
           Array_char geneName = getGeneName(lCol-1);
           gtk_entry_set_text(GTK_ENTRY(cell), geneName.data);
+          gtk_widget_set_sensitive(cell, TRUE);
         } else {
           gtk_entry_set_text(GTK_ENTRY(cell), "");
+          gtk_widget_set_sensitive(cell, FALSE);
         }
       } else if(col == 0 && row > 0){
         if(lRow-1 < getTotalGenes()){
           Array_char geneName = getGeneName(lRow-1);
           gtk_entry_set_text(GTK_ENTRY(cell), geneName.data);
+          gtk_widget_set_sensitive(cell, TRUE);
         } else {
           gtk_entry_set_text(GTK_ENTRY(cell), "");
+          gtk_widget_set_sensitive(cell, FALSE);
         }
       } else if(row > 0 && col > 0){
         if(lCol <= lRow){
           gtk_widget_set_sensitive(cell, FALSE);
         } else {
-          gtk_widget_set_sensitive(cell, TRUE);
+          if(probRow < getTotalGenes() && probCol < getTotalGenes()){
+            prob = getProbability(probRow, probCol);
+            printf("prob: %f, %d\n", prob, prob > 0);
+            if(prob > 0 && prob < 0.5 && prob != 0.0 && prob != -0.0){
+              autoFilledTxtGrid = true;
+              sprintf(fillWith, "%f", prob);
+              bye0sRight(fillWith);
+              changeCommaToPoint(fillWith);
+              gtk_entry_set_text(GTK_ENTRY(cell), fillWith);
+              autoFilledTxtGrid = false;
+            }
+            gtk_widget_set_sensitive(cell, TRUE);
+          } else {
+            gtk_widget_set_sensitive(cell, FALSE);
+          }
         }
-        // Array_char d = getDescendant(probRow,probCol);
-        // if(d.data == NULL){
-        //   gtk_entry_set_text(GTK_ENTRY(cell), "");
-        // } else {
-        //   gtk_entry_set_text(GTK_ENTRY(cell), d.data);
-        // }
+      } else {
+        gtk_widget_set_sensitive(cell, FALSE);
       }
     }
   }
@@ -216,23 +249,42 @@ void fillProbabilitiesGridAux(){
 }
 
 void on_window_destroy(){
+  if(areGenesInitialized()){
+    freeGenes();
+  }
   for(int i = 0; i < rcArray.size; i++){
     if(rcArray.data[i]){
       free(rcArray.data[i]);
     }
   }
   freeArray(rcArray);
-  if(areGenesInitialized()){
-    freeGenes();
-  }
   g_object_unref(builder);
   gtk_main_quit();
 }
 
 void on_btn_chooseFile_file_set(GtkFileChooserButton *f){
   gchar *fileName = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(f));
-  printf("%s\n",fileName);
-  fileChosen = true;
+  if(!fileChosen){
+    fileChosen = true;
+    if(!loadFile(fileName)){
+      messagesWindow(window, "Could not open file");
+    } else {
+      char fillWith[9];
+      sprintf(fillWith, "%d", getTotalGenes());
+      gtk_entry_set_text(GTK_ENTRY(txt_nFeatures), fillWith);
+      fillProbabilitiesGrid(getTotalGenes());
+      gtk_widget_queue_draw(window);
+    }
+    fileChosen = false;
+  }
+}
+
+void on_txt_nFeatures_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, int position, gpointer user_data){
+  if(!autoFilledTxtFeatures){
+    if(new_text[new_text_length-1] < '2' || new_text[new_text_length-1] > '3'){
+      g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
+    }
+  }
 }
 
 void on_btn_nFeatures_clicked(GtkButton *b){
@@ -242,10 +294,7 @@ void on_btn_nFeatures_clicked(GtkButton *b){
     sscanf(val, "%d", &n);
   }
   if(n > 0){
-    if(!areGenesInitialized()){
-      initializeGenes(n);
-    }
-    createGeneNames(n);
+    initializeGenes(n);
     fillProbabilitiesGrid(n);
   } else {
     messagesWindow(window, "Number of genes can not be empty");
@@ -286,60 +335,118 @@ void on_btn_right_clicked(GtkButton *b){
   }
 }
 
+void needsChangePointToComma(char str[], int size){
+  float a;
+  sscanf("0.3", "%f", &a);
+  if(a != 0.3){
+    for(int i = 0; i < size; i++){
+      if(str[i] == '.'){
+        str[i] = ',';
+      }
+    }
+  }
+}
+
+void changeCommaToPoint(char str[9]){
+  for(int i = 0; i < 9; i++){
+    if(str[i] == ','){
+      str[i] = '.';
+    }
+  }
+}
+
 void on_txt_probability_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, gint* position, gpointer user_data){
-  double prob = 0.0;
+  float prob = 0.0;
   int row, col;
-  if(new_text_length <= 1){
-    if(*position == 0){
-      if(new_text[0] != '0'){
+  char result[9];
+  if(!autoFilledTxtGrid){
+    if(new_text_length <= 1){
+      if(*position == 0){
+        if(new_text[0] != '0'){
+          g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
+        }
+      } else if(*position == 1){
+        if(new_text[0] != '.'){
+          g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
+        }
+      } else if(*position == 2){
+        if(new_text[0] < '0' || new_text[0] >= '5'){
+          g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
+        }
+      } else if(new_text[0] < '0' || new_text[0] > '9'){
         g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
       }
-    } else if(*position == 1){
-      if(new_text[0] != ','){
-        g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
-      }
-    } else if(*position == 2){
-      if(new_text[0] < '0' || new_text[0] >= '5'){
-        g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
-      } else {
+      if(areGenesInitialized()){
         const gchar* c = gtk_entry_get_text(GTK_ENTRY(self));
-        char result[18];
         strcpy(result,c);
         strcat(result,new_text);
-        sscanf(result, "%lf", &prob);
+        needsChangePointToComma(result, 9);
+        sscanf(result, "%f", &prob);
         row = (*(struct RCPair*)user_data).row;
         col = (*(struct RCPair*)user_data).col;
-        insertProbability(prob, row, col);
+        if(prob > 0.0 && prob < 0.5){
+          insertProbability(prob, row + lastRow - maxRows, col + lastCol - maxCols);
+        } else {
+          insertProbability(2.0, row + lastRow - maxRows, col + lastCol - maxCols);
+        }
       }
-    } else if(new_text[0] < '0' || new_text[0] > '9'){
-      g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
-    }
-  } else {
-      sscanf(new_text, "%lf", &prob);
+    } else {
+      strcpy(result,new_text);
+      needsChangePointToComma(result, 9);
+      sscanf(result, "%f", &prob);
+      row = (*(struct RCPair*)user_data).row;
+      col = (*(struct RCPair*)user_data).col;
       if(prob <= 0.0 || prob >= 0.5){
+        if(areGenesInitialized()){
+          insertProbability(2.0, row + lastRow - maxRows, col + lastCol - maxCols);
+        }
         g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
       } else {
-        row = (*(struct RCPair*)user_data).row;
-        col = (*(struct RCPair*)user_data).col;
-        insertProbability(prob, row, col);
+        if(areGenesInitialized()){
+          insertProbability(prob, row + lastRow - maxRows, col + lastCol - maxCols);
+        }
       }
     }
+    gtk_widget_queue_draw(window);
+  }
+}
+
+void on_txt_gene_name_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, gint* position, gpointer user_data){
+  int row, col;
 }
 
 void on_btn_zoomIn_clicked(GtkButton *b){
   scale += 0.1;
+  gtk_widget_queue_draw(window);
 }
 
 void on_btn_zoomOut_clicked(GtkButton *b){
   scale -= 0.1;
+  gtk_widget_queue_draw(window);
 }
 
 void on_btn_inferProbabilities_clicked(GtkButton *b){
-  inferProbabilities();
+  printf("SIIIIIIIIIIIIIIIIIII\n");
+  if(inferProbabilities()){
+    printf("SIIII 1\n");
+    needFillGrid = true;
+    fillProbabilitiesGrid(getTotalGenes());
+    printf("SIIII 3\n");
+    gtk_widget_queue_draw(window);
+  } else {
+    messagesWindow(window, "Could not infer probabilities");
+  }
 }
 
-void on_btn_draw_clicked(GtkButton *b){
-  createOrders();
-  needsDrawing = true;
-  gtk_widget_queue_draw(window);
+void on_btn_saveFile_clicked(GtkButton *b){
+  const gchar* fn = gtk_entry_get_text(GTK_ENTRY(txt_fileName));
+  bool isAlphaN = isalnum(fn[0]);
+  if(isAlphaN && areGenesInitialized()){
+    gchar* fileName = g_strconcat(fn, ".txt", NULL);
+    if(!saveFile(fileName)){
+      messagesWindow(window, "Could not save file");
+    } else {
+      messagesWindow(window, "File saved");
+    }
+  }
 }
