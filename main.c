@@ -107,7 +107,7 @@ void do_drawing(cairo_t *cr){
   if(areGenesInitialized() && areOrdersCreated()){
     Array_ints orders = getOrders();
     cairo_scale(cr, scale, scale);
-    cairo_set_line_width(cr, 5);
+    cairo_set_line_width(cr, 1);
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
     printf("DISTANCES --------------------------------------------------\n");
     for(int i = 0; i < getTotalPossibleOrders(); i++){
@@ -119,7 +119,7 @@ void do_drawing(cairo_t *cr){
       xCoordChromosome = 25+i*80+x;
       Array_float distances = getDistances(i);
       cairo_move_to(cr, xCoordChromosome, 10+y);
-      cairo_line_to(cr, xCoordChromosome, 110+y);
+      cairo_line_to(cr, xCoordChromosome, 310+y);
 
       cairo_move_to(cr, xCoordChromosome-10, yCoordGene);
       cairo_line_to(cr, xCoordChromosome+10, yCoordGene);
@@ -128,7 +128,7 @@ void do_drawing(cairo_t *cr){
       cairo_show_text(cr, geneName.data);
       for(int j = 0; j < distances.used; j++){
         printf("%f,", distances.data[j]);
-        yCoordGene = yCoordGene+100*distances.data[j];
+        yCoordGene = yCoordGene+600*distances.data[j];
         cairo_move_to(cr, xCoordChromosome-10, yCoordGene);
         cairo_line_to(cr, xCoordChromosome+10, yCoordGene);
         cairo_move_to(cr, xCoordChromosome+15, yCoordGene);
@@ -174,6 +174,7 @@ void createProbabilitiesGrid(){
 
 void fillProbabilitiesGrid(int total){
   if(totalProbs != total || needFillGrid){
+    x = 0.0, y = 0.0;
     needFillGrid = false;
     grid_probabilitiesRows = totalProbs = total;
     lastRow = 0; lastCol = 0;
@@ -287,6 +288,7 @@ void on_btn_chooseFile_file_set(GtkFileChooserButton *f){
     if(!loadFile(fileName)){
       messagesWindow(window, "Could not open file");
     } else {
+      x = 0.0, y = 0.0;
       char fillWith[9];
       sprintf(fillWith, "%d", getTotalGenes());
       gtk_entry_set_text(GTK_ENTRY(txt_nFeatures), fillWith);
@@ -498,8 +500,8 @@ on_da_chromosomes_motion_notify_event (
   printf("(%f,%f) (%f,%f)\n", event->x, event->y,event->x_root, event->y_root);
   if(pressed){
 
-  x += (event->x - beginX)/50;
-  y += (event->y - beginY)/50;
+  x += (event->x - beginX)/40;
+  y += (event->y - beginY)/40;
   gtk_widget_queue_draw(window);
   }
   return TRUE;
