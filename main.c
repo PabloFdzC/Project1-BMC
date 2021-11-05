@@ -28,6 +28,9 @@ int desTotPageX = 1, desTotPageY = 1;
 int maxRows = 5, maxCols = 5;
 int totalProbs = 0;
 bool needFillGrid = true;
+double x = 0.0, y = 0.0;
+double beginX = 0.0, beginY = 0.0;
+bool pressed = false;
 
 GtkWidget *btn_nFeatures;
 GtkWidget *txt_nFeatures;
@@ -51,6 +54,7 @@ void initRCPairs();
 void changeCommaToPoint(char str[9]);
 void setEntriesRestrictions();
 
+void on_txt_probability_changed(GtkEditable* self, gpointer user_data);
 void on_txt_probability_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, gint* position, gpointer user_data);
 void on_txt_gene_name_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, gint* position, gpointer user_data);
 void on_txt_probability_delete_text(GtkEditable* self,gint start_pos,gint end_pos, gpointer user_data);
@@ -107,11 +111,15 @@ void do_drawing(cairo_t *cr){
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
     printf("DISTANCES --------------------------------------------------\n");
     for(int i = 0; i < getTotalPossibleOrders(); i++){
-      yCoordGene = 20;
-      xCoordChromosome = 25+i*80;
+      for(int j = 0; j < orders.data[i].used; j++){
+        printf("%d,", orders.data[i].data[j]);
+      }
+      printf("\n");
+      yCoordGene = 20+y;
+      xCoordChromosome = 25+i*80+x;
       Array_float distances = getDistances(i);
-      cairo_move_to(cr, xCoordChromosome, 10);
-      cairo_line_to(cr, xCoordChromosome, 110);
+      cairo_move_to(cr, xCoordChromosome, 10+y);
+      cairo_line_to(cr, xCoordChromosome, 110+y);
 
       cairo_move_to(cr, xCoordChromosome-10, yCoordGene);
       cairo_line_to(cr, xCoordChromosome+10, yCoordGene);
@@ -150,9 +158,10 @@ void createProbabilitiesGrid(){
         struct RCPair *rcp = malloc(sizeof(struct RCPair));
         rcp->row = row-1;
         rcp->col = col-1;
-        appendArray(rcArray, struct RCPair*, rcp);
+        appendPArray(rcArray, struct RCPair*, rcp);
         if(row != 0 && col != 0){
           g_signal_connect(cell, "insert-text", G_CALLBACK(on_txt_probability_insert_text), rcArray.data[rcArray.used-1]);
+          g_signal_connect(cell, "changed", G_CALLBACK(on_txt_probability_changed), rcArray.data[rcArray.used-1]);
         } else {
           g_signal_connect(cell, "insert-text", G_CALLBACK(on_txt_gene_name_insert_text), rcArray.data[rcArray.used-1]);
         }
@@ -208,6 +217,7 @@ void fillProbabilitiesGridAux(){
         }
       } else if(row > 0 && col > 0){
         if(lCol <= lRow){
+          gtk_entry_set_text(GTK_ENTRY(cell), "");
           gtk_widget_set_sensitive(cell, FALSE);
         } else {
           if(probRow < getTotalGenes() && probCol < getTotalGenes()){
@@ -220,9 +230,12 @@ void fillProbabilitiesGridAux(){
               changeCommaToPoint(fillWith);
               gtk_entry_set_text(GTK_ENTRY(cell), fillWith);
               autoFilledTxtGrid = false;
+            } else {
+              gtk_entry_set_text(GTK_ENTRY(cell), "");
             }
             gtk_widget_set_sensitive(cell, TRUE);
           } else {
+            gtk_entry_set_text(GTK_ENTRY(cell), "");
             gtk_widget_set_sensitive(cell, FALSE);
           }
         }
@@ -249,15 +262,20 @@ void fillProbabilitiesGridAux(){
 }
 
 void on_window_destroy(){
+  printf("GOOD1\n");
   if(areGenesInitialized()){
     freeGenes();
   }
+  printf("GOOD2\n");
   for(int i = 0; i < rcArray.size; i++){
     if(rcArray.data[i]){
+      printf("%p\n",rcArray.data[i]);
       free(rcArray.data[i]);
     }
   }
+  printf("GOOD3\n");
   freeArray(rcArray);
+  printf("GOOD4\n");
   g_object_unref(builder);
   gtk_main_quit();
 }
@@ -281,7 +299,7 @@ void on_btn_chooseFile_file_set(GtkFileChooserButton *f){
 
 void on_txt_nFeatures_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, int position, gpointer user_data){
   if(!autoFilledTxtFeatures){
-    if(new_text[new_text_length-1] < '2' || new_text[new_text_length-1] > '3'){
+    if(new_text[new_text_length-1] < '2' || new_text[new_text_length-1] > '7'){
       g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
     }
   }
@@ -355,9 +373,29 @@ void changeCommaToPoint(char str[9]){
   }
 }
 
-void on_txt_probability_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, gint* position, gpointer user_data){
+void on_txt_probability_changed(GtkEditable* self, gpointer user_data){
   float prob = 0.0;
   int row, col;
+  char result[9];
+  if(areGenesInitialized() && !autoFilledTxtGrid){
+    const gchar* c = gtk_entry_get_text(GTK_ENTRY(self));
+    strcpy(result,c);
+    needsChangePointToComma(result, 9);
+    sscanf(result, "%f", &prob);
+    row = (*(struct RCPair*)user_data).row;
+    col = (*(struct RCPair*)user_data).col;
+    if(prob > 0.0 && prob < 0.5){
+      insertProbability(prob, row + lastRow - maxRows, col + lastCol - maxCols);
+    } else {
+      printf("METE 2\n");
+      insertProbability(2.0, row + lastRow - maxRows, col + lastCol - maxCols);
+    }
+    gtk_widget_queue_draw(window);
+  }
+}
+
+void on_txt_probability_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, gint* position, gpointer user_data){
+  float prob = 0.0;
   char result[9];
   if(!autoFilledTxtGrid){
     if(new_text_length <= 1){
@@ -376,38 +414,14 @@ void on_txt_probability_insert_text(GtkEditable* self, gchar* new_text, gint new
       } else if(new_text[0] < '0' || new_text[0] > '9'){
         g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
       }
-      if(areGenesInitialized()){
-        const gchar* c = gtk_entry_get_text(GTK_ENTRY(self));
-        strcpy(result,c);
-        strcat(result,new_text);
-        needsChangePointToComma(result, 9);
-        sscanf(result, "%f", &prob);
-        row = (*(struct RCPair*)user_data).row;
-        col = (*(struct RCPair*)user_data).col;
-        if(prob > 0.0 && prob < 0.5){
-          insertProbability(prob, row + lastRow - maxRows, col + lastCol - maxCols);
-        } else {
-          insertProbability(2.0, row + lastRow - maxRows, col + lastCol - maxCols);
-        }
-      }
     } else {
       strcpy(result,new_text);
       needsChangePointToComma(result, 9);
       sscanf(result, "%f", &prob);
-      row = (*(struct RCPair*)user_data).row;
-      col = (*(struct RCPair*)user_data).col;
       if(prob <= 0.0 || prob >= 0.5){
-        if(areGenesInitialized()){
-          insertProbability(2.0, row + lastRow - maxRows, col + lastCol - maxCols);
-        }
         g_signal_stop_emission_by_name (G_OBJECT(self), "insert_text");
-      } else {
-        if(areGenesInitialized()){
-          insertProbability(prob, row + lastRow - maxRows, col + lastCol - maxCols);
-        }
       }
     }
-    gtk_widget_queue_draw(window);
   }
 }
 
@@ -449,4 +463,44 @@ void on_btn_saveFile_clicked(GtkButton *b){
       messagesWindow(window, "File saved");
     }
   }
+}
+
+gboolean
+on_da_chromosomes_button_press_event (
+  GtkWidget* self,
+  GdkEventButton* event,
+  gpointer user_data
+){
+  beginX = event->x;
+  beginY = event->y;
+  pressed = true;
+  return TRUE;
+}
+
+gboolean
+on_da_chromosomes_button_release_event (
+  GtkWidget* self,
+  GdkEventButton* event,
+  gpointer user_data
+){
+  pressed = false;
+  return TRUE;
+}
+
+gboolean
+on_da_chromosomes_motion_notify_event (
+  GtkWidget* self,
+  GdkEventMotion *event,
+  gpointer user_data
+){
+  GdkAtom target;
+
+  printf("(%f,%f) (%f,%f)\n", event->x, event->y,event->x_root, event->y_root);
+  if(pressed){
+
+  x += (event->x - beginX)/50;
+  y += (event->y - beginY)/50;
+  gtk_widget_queue_draw(window);
+  }
+  return TRUE;
 }
