@@ -52,7 +52,6 @@ void initializeGenes(int total){
         totalGenesIn--;
       }
     }
-    //printf("tot:%d %d\n", total, totalGenes);
     for(int i = 0; i < totalGenes; i++){
       for(int j = i; j < totalGenes; j++){
         if(i >= total || j >= total){
@@ -123,7 +122,6 @@ void createGeneNames(int totalGenes){
       } else {
         sprintf(name.data, "G%d", i+1);
       }
-      printf("i:%d\n",i);
       appendArrayP(geneNames, Array_char, name);
     }
   }
@@ -147,21 +145,12 @@ void freeGenes(){
 }
 
 void createOrders(){
-  //printf("%d\n",validProbs);
   if(!ordersCreated && genesInitialized && validProbs){
-    //printf("\nPROBABILITIES\n\n");
-    // for(int i = 0; i < totalProbabilities; i++){
-    //   for(int j = 0; j < totalProbabilities; j++){
-    //     printf("%f,", probabilities.data[i].data[j]);
-    //   }
-    //   printf("\n");
-    // }
     bool first = true;
     totalPossibleOrders = 0;
     int totalOrders = factorial(totalGenesIn)/2;
     bool alreadyIn, stop = false, possible;
     int i2 = 0;
-    //printf("totalGI: %d\n",totalGenesIn);
     if(totalGenesIn > 0){
       for(int i = 0; i < totalOrders && !stop; i++){
         alreadyIn = false;
@@ -429,12 +418,23 @@ int getTotalGenes(){
   return totalGenes;
 }
 
-Array_char getGeneName(int i){
-  if(i < geneNames.used){
-    return geneNames.data[i];
+Array_char getGeneName(int pos){
+  if(pos < geneNames.used && pos >= 0){
+    return geneNames.data[pos];
   }
   Array_char a = {NULL, 0, 0};
   return a;
+}
+
+void setGeneName(int pos, char name[]){
+  if(pos < geneNames.used && pos >= 0){
+    int l = strlen(name);
+    deleteAllArray(geneNames.data[pos]);
+    for(int i = 0; i < l; i++){
+      appendArray(geneNames.data[pos], char, name[i]);
+    }
+    appendArray(geneNames.data[pos], char, '\0');
+  }
 }
 
 int getTotalPossibleOrders(){
@@ -464,19 +464,7 @@ bool isValidProbability(float prob){
 Array_float getdistancesInBetween(Array_int order, Array_float *distances, bool alreadyIn){
   int first, second, i, j, first0 =-1, total0s;
   float greatestKnown, maxProb = 0.5, sumOfDistances = 0.0, probability = 0.0;
-  bool solution = false, fixed = false;
-  // printf("---------------------------------------------------\nAlreadyIN:%d\ndistances:%p\nOrder: \n",alreadyIn, distances->data);
-  // for(i = 0; i < probabilities.used; i++){
-  //   for(j=0;j< probabilities.used;j++){
-  //     printf("%f  ",probabilities.data[i].data[j]);
-  //   }
-  //   printf("\n");
-  // }
-  // printf("\n");
-  // for(i = 0; i < order.used; i++){
-  //   printf("%d,",order.data[i]);
-  // }
-  // printf("\n");
+  bool solution = false;
   deleteAllArray((*distances));
   for(i = 0; i < order.used; i++){
     if(sumOfDistances <= maxProb){
@@ -501,7 +489,6 @@ Array_float getdistancesInBetween(Array_int order, Array_float *distances, bool 
   }
   for(first0 = 0; first0 < distances->used; first0++){
     if(distances->data[first0] == 0.0){
-      fixed = true;
       total0s = 0;
       for(i = first0; i >= 0; i--){
         greatestKnown = 0;
@@ -521,18 +508,15 @@ Array_float getdistancesInBetween(Array_int order, Array_float *distances, bool 
                 total0s++;
               }
             }
-            //printf("PASA 1\n");
             for(int k = i; k < j && k < distances->used; k++){
               if(distances->data[k] == 0.0){
                 distances->data[k] = greatestKnown / total0s;
               }
               
             }
-            //printf("PASA 2\n");
             break;
           }
         }
-        //printf("PASA 3\n");
         if(solution){
           break;
         }
@@ -549,10 +533,8 @@ Array_float getdistancesInBetween(Array_int order, Array_float *distances, bool 
       for(j = first0+1; j < order.used; j++){
         second = order.data[j];
         solution = isValidProbability(probabilities.data[first].data[second]);
-        //printf("look at: (%d, %d) (%d, %d) s:%d p:%f\n",first,second, i,j,solution, probabilities.data[first].data[second]);
         probability = 0.0;
         for(int k = i; k < j && k < distances->used;k++){
-          //printf("%f+",distances->data[k]);
           probability += distances->data[k];
         }
         if((solution && probability > probabilities.data[first].data[second]) || probability >= 0.5){
@@ -562,7 +544,6 @@ Array_float getdistancesInBetween(Array_int order, Array_float *distances, bool 
       }
     }
   }
-  //printf("---------------------------------------------------\n");
   return *distances;
 }
 
@@ -604,7 +585,6 @@ bool loadFile(char fileName[]){
   FILE * file = fopen (fileName,"r");
   if (file != NULL){
     for(char c = fgetc(file); feof(file) == 0; c = fgetc(file)){
-      //printf("c:%c, pC:%d, pR:%d, fA:%d, nf:%d, pf:%d\n",c, probCol, probRow, fileArrays, namesFilled, probsFilled);
       if(c == '|' || c == '\n'){
         if(geneNamesFile.used == size){
           namesFilled = true;
@@ -648,7 +628,6 @@ bool loadFile(char fileName[]){
         }
       } else if(!namesFilled && isalnum(c)){
         if(!fileArrays || geneNamesFile.used > size || probRow >= size || probCol >= size){
-          //printf("MAL 1\n");
           badFormat = true;
         } else {
           do{
@@ -666,7 +645,6 @@ bool loadFile(char fileName[]){
         }
       } else if(isdigit(c)){
         if(!fileArrays || !namesFilled || geneNamesFile.used != size){
-          //printf("MAL 2\n");
           badFormat = true;
         } else {
           do{
@@ -685,7 +663,6 @@ bool loadFile(char fileName[]){
           }
         }
       } else {
-        //printf("MAL 4\n");
         badFormat = true;
       }
       if(badFormat){

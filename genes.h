@@ -18,7 +18,9 @@ float getProbability(int row, int col);
 
 int getTotalGenes();
 
-Array_char getGeneName(int i);
+Array_char getGeneName(int pos);
+
+void setGeneName(int pos, char name[]);
 
 int getTotalPossibleOrders();
 

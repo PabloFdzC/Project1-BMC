@@ -30,7 +30,7 @@ int totalProbs = 0;
 bool needFillGrid = true;
 double x = 0.0, y = 0.0;
 double beginX = 0.0, beginY = 0.0;
-bool pressed = false;
+bool pressed = false, geneNameAutoChanged = false;;
 
 GtkWidget *btn_nFeatures;
 GtkWidget *txt_nFeatures;
@@ -56,7 +56,7 @@ void setEntriesRestrictions();
 
 void on_txt_probability_changed(GtkEditable* self, gpointer user_data);
 void on_txt_probability_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, gint* position, gpointer user_data);
-void on_txt_gene_name_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, gint* position, gpointer user_data);
+void on_txt_gene_name_changed(GtkEditable* self, gpointer user_data);
 void on_txt_probability_delete_text(GtkEditable* self,gint start_pos,gint end_pos, gpointer user_data);
 
 int main(int argc, char *argv[]){
@@ -109,12 +109,7 @@ void do_drawing(cairo_t *cr){
     cairo_scale(cr, scale, scale);
     cairo_set_line_width(cr, 1);
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-    printf("DISTANCES --------------------------------------------------\n");
     for(int i = 0; i < getTotalPossibleOrders(); i++){
-      for(int j = 0; j < orders.data[i].used; j++){
-        printf("%d,", orders.data[i].data[j]);
-      }
-      printf("\n");
       yCoordGene = 20+y;
       xCoordChromosome = 25+i*80+x;
       Array_float distances = getDistances(i);
@@ -127,7 +122,6 @@ void do_drawing(cairo_t *cr){
       geneName = getGeneName(orders.data[i].data[0]);
       cairo_show_text(cr, geneName.data);
       for(int j = 0; j < distances.used; j++){
-        printf("%f,", distances.data[j]);
         yCoordGene = yCoordGene+600*distances.data[j];
         cairo_move_to(cr, xCoordChromosome-10, yCoordGene);
         cairo_line_to(cr, xCoordChromosome+10, yCoordGene);
@@ -135,7 +129,6 @@ void do_drawing(cairo_t *cr){
         geneName = getGeneName(orders.data[i].data[j+1]);
         cairo_show_text(cr, geneName.data);
       }
-      printf("\n");
     }
     cairo_stroke(cr);
   }
@@ -154,6 +147,7 @@ void createProbabilitiesGrid(){
       if(!cell){
         cell = gtk_entry_new();
         gtk_grid_attach(GTK_GRID(grid_probabilities), cell, col, row, 1, 1);
+        gtk_widget_set_sensitive(cell, FALSE);
         gtk_widget_show(cell);
         struct RCPair *rcp = malloc(sizeof(struct RCPair));
         rcp->row = row-1;
@@ -163,7 +157,8 @@ void createProbabilitiesGrid(){
           g_signal_connect(cell, "insert-text", G_CALLBACK(on_txt_probability_insert_text), rcArray.data[rcArray.used-1]);
           g_signal_connect(cell, "changed", G_CALLBACK(on_txt_probability_changed), rcArray.data[rcArray.used-1]);
         } else {
-          g_signal_connect(cell, "insert-text", G_CALLBACK(on_txt_gene_name_insert_text), rcArray.data[rcArray.used-1]);
+          g_signal_connect(cell, "changed", G_CALLBACK(on_txt_gene_name_changed), rcArray.data[rcArray.used-1]);
+          gtk_entry_set_max_length (GTK_ENTRY(cell), 7);
         }
       }
     }
@@ -190,11 +185,11 @@ void fillProbabilitiesGridAux(){
   int probRow=0,probCol=0;
   float prob = 0.0;
   char fillWith[9];
+  geneNameAutoChanged = true;
   for(int row = 0; row <= maxRows; row++){
     lRow = row + lastRow;
     probRow = row+lastRow-1;
     for(int col = 0; col <= maxCols; col++){
-      printf("Actual row:%d, col:%d\n",row, col);
       GtkWidget* cell = gtk_grid_get_child_at(GTK_GRID(grid_probabilities), col, row);
       lCol = col + lastCol;
       probCol = col+lastCol-1;
@@ -223,7 +218,6 @@ void fillProbabilitiesGridAux(){
         } else {
           if(probRow < getTotalGenes() && probCol < getTotalGenes()){
             prob = getProbability(probRow, probCol);
-            printf("prob: %f, %d\n", prob, prob > 0);
             if(prob > 0 && prob < 0.5 && prob != 0.0 && prob != -0.0){
               autoFilledTxtGrid = true;
               sprintf(fillWith, "%f", prob);
@@ -245,6 +239,7 @@ void fillProbabilitiesGridAux(){
       }
     }
   }
+  geneNameAutoChanged = false;
   lastRow = lRow;
   lastCol = lCol;
   char lbl[23];
@@ -263,20 +258,15 @@ void fillProbabilitiesGridAux(){
 }
 
 void on_window_destroy(){
-  printf("GOOD1\n");
   if(areGenesInitialized()){
     freeGenes();
   }
-  printf("GOOD2\n");
   for(int i = 0; i < rcArray.size; i++){
     if(rcArray.data[i]){
-      printf("%p\n",rcArray.data[i]);
       free(rcArray.data[i]);
     }
   }
-  printf("GOOD3\n");
   freeArray(rcArray);
-  printf("GOOD4\n");
   g_object_unref(builder);
   gtk_main_quit();
 }
@@ -288,7 +278,9 @@ void on_btn_chooseFile_file_set(GtkFileChooserButton *f){
     if(!loadFile(fileName)){
       messagesWindow(window, "Could not open file");
     } else {
-      x = 0.0, y = 0.0;
+      needFillGrid = true;
+      x = 0.0;
+      y = 0.0;
       char fillWith[9];
       sprintf(fillWith, "%d", getTotalGenes());
       gtk_entry_set_text(GTK_ENTRY(txt_nFeatures), fillWith);
@@ -389,7 +381,6 @@ void on_txt_probability_changed(GtkEditable* self, gpointer user_data){
     if(prob > 0.0 && prob < 0.5){
       insertProbability(prob, row + lastRow - maxRows, col + lastCol - maxCols);
     } else {
-      printf("METE 2\n");
       insertProbability(2.0, row + lastRow - maxRows, col + lastCol - maxCols);
     }
     gtk_widget_queue_draw(window);
@@ -427,8 +418,26 @@ void on_txt_probability_insert_text(GtkEditable* self, gchar* new_text, gint new
   }
 }
 
-void on_txt_gene_name_insert_text(GtkEditable* self, gchar* new_text, gint new_text_length, gint* position, gpointer user_data){
-  int row, col;
+void  on_txt_gene_name_changed(GtkEditable* self, gpointer user_data){
+  if(!geneNameAutoChanged){
+    int row, col;
+    row = (*(struct RCPair*)user_data).row;
+    col = (*(struct RCPair*)user_data).col;
+    printf("ROW:%d, COL:%d\n",row+1, col+1);
+    const gchar* c = gtk_entry_get_text(GTK_ENTRY(self));
+    char name[10];
+    strcpy(name,c);
+    if(row < 0){
+      setGeneName(col, name);
+    } else {
+      setGeneName(row, name);
+    }
+    geneNameAutoChanged = true;
+    GtkWidget* cell = gtk_grid_get_child_at(GTK_GRID(grid_probabilities), row+1, col+1);
+    gtk_entry_set_text(GTK_ENTRY(cell), name);
+    geneNameAutoChanged = false;
+    gtk_widget_queue_draw(window);
+  }
 }
 
 void on_btn_zoomIn_clicked(GtkButton *b){
@@ -442,12 +451,9 @@ void on_btn_zoomOut_clicked(GtkButton *b){
 }
 
 void on_btn_inferProbabilities_clicked(GtkButton *b){
-  printf("SIIIIIIIIIIIIIIIIIII\n");
   if(inferProbabilities()){
-    printf("SIIII 1\n");
     needFillGrid = true;
     fillProbabilitiesGrid(getTotalGenes());
-    printf("SIIII 3\n");
     gtk_widget_queue_draw(window);
   } else {
     messagesWindow(window, "Could not infer probabilities");
@@ -467,37 +473,19 @@ void on_btn_saveFile_clicked(GtkButton *b){
   }
 }
 
-gboolean
-on_da_chromosomes_button_press_event (
-  GtkWidget* self,
-  GdkEventButton* event,
-  gpointer user_data
-){
+gboolean on_da_chromosomes_button_press_event(GtkWidget* self, GdkEventButton* event, gpointer user_data){
   beginX = event->x;
   beginY = event->y;
   pressed = true;
   return TRUE;
 }
 
-gboolean
-on_da_chromosomes_button_release_event (
-  GtkWidget* self,
-  GdkEventButton* event,
-  gpointer user_data
-){
+gboolean on_da_chromosomes_button_release_event(GtkWidget* self, GdkEventButton* event, gpointer user_data){
   pressed = false;
   return TRUE;
 }
 
-gboolean
-on_da_chromosomes_motion_notify_event (
-  GtkWidget* self,
-  GdkEventMotion *event,
-  gpointer user_data
-){
-  GdkAtom target;
-
-  printf("(%f,%f) (%f,%f)\n", event->x, event->y,event->x_root, event->y_root);
+gboolean on_da_chromosomes_motion_notify_event(GtkWidget* self, GdkEventMotion *event, gpointer user_data){
   if(pressed){
 
   x += (event->x - beginX)/40;
